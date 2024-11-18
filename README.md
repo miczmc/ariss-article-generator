@@ -1,2 +1,2 @@
 # ariss-article-generator
-ARISS article generator in Pytho
+ARISS article generator in Python
