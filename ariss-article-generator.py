@@ -47,9 +47,22 @@ Note:
     Le script nécessite que le fichier arissnews.txt soit formaté selon
     le format standard ARISS. Le fichier doit être encodé en UTF-8.
 
+Changelog:
+    v1.0.1 (2024-03-22):
+    - Fix du bug d'affichage des contacts télébridge
+    - Ajout de la détection automatique des stations italiennes (IK*)
+    - Amélioration du formatage du texte pour les contacts télébridge
+    - Ajout d'un attribut station_location dans la classe ArissContact
+
+    v1.0.0 (2024-03-21):
+    - Version initiale
+    - Génération basique des articles WordPress
+    - Support des contacts directs et télébridge
+    - Conversion automatique des fuseaux horaires
+
 Author: Michel Nawrocki F1AFW, ARISS
-Version: 1.0.0
-Date: 2024-03-21
+Version: 1.0.1
+Date: 2024-03-22
 """
 
 import re
@@ -76,12 +89,12 @@ class ArissContact:
         self.elevation = ""
         self.contact_type = ""
         self.mentor = ""
+        self.station_location = ""
 
 class ArissArticleGenerator:
     def __init__(self, text):
         self.raw_text = text
         self.contacts = []
-        # Set locale for French date formatting
         try:
             locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
         except locale.Error:
@@ -102,37 +115,46 @@ class ArissArticleGenerator:
             lines = section.strip().split('\n')
             
             for line in lines:
-                if 'direct via' in line.lower() or 'telebridge via' in line.lower():
-                    school_info = line.split(',')
-                    contact.school = school_info[0].strip()
-                    if len(school_info) > 1:
-                        contact.location = school_info[1].strip()
-                        contact_type_info = school_info[2].strip().split(' via ')
-                        contact.contact_type = contact_type_info[0].strip()
-                        if len(contact_type_info) > 1:
-                            contact.callsign = contact_type_info[1].strip()
+                if ', telebridge via ' in line or ', direct via ' in line:
+                    parts = line.split(',', 2)
+                    contact.school = parts[0].strip()
+                    
+                    if len(parts) > 1:
+                        contact.location = parts[1].strip()
+                    
+                    if len(parts) > 2:
+                        type_and_call = parts[2].strip()
+                        if 'telebridge via' in type_and_call:
+                            contact.contact_type = "telebridge"
+                            contact.callsign = type_and_call.split('via')[1].strip()
+                            if contact.callsign.startswith('IK'):
+                                contact.station_location = "italienne"
+                        elif 'direct via' in type_and_call:
+                            contact.contact_type = "direct"
+                            contact.callsign = type_and_call.split('via')[1].strip()
                 
                 elif 'frequency' in line.lower():
-                    contact.frequency = line.split('be')[1].strip()
+                    try:
+                        contact.frequency = line.split('be')[1].strip()
+                    except IndexError:
+                        continue
                 
                 elif 'scheduled crewmember is' in line.lower():
                     crew_info = line.split('is')[1].strip()
                     if ' ' in crew_info:
                         name_parts = crew_info.split(' ')
-                        contact.astronaut = ' '.join(name_parts[:-1]) if len(name_parts) > 1 else crew_info
-                        contact.astronaut_callsign = name_parts[-1] if len(name_parts) > 1 else ""
+                        contact.astronaut = ' '.join(name_parts[:-1])
+                        contact.astronaut_callsign = name_parts[-1]
                     else:
                         contact.astronaut = crew_info
                 
                 elif 'Contact is go for:' in line:
                     try:
                         date_time_str = line.split('Contact is go for:')[1].split('UTC')[0].strip()
-                        # Parser la date en UTC
                         parsed_dt = parser.parse(date_time_str)
-                        # Créer un datetime avec le fuseau horaire UTC
                         contact.date_time = datetime(
-                            parsed_dt.year, 
-                            parsed_dt.month, 
+                            parsed_dt.year,
+                            parsed_dt.month,
                             parsed_dt.day,
                             parsed_dt.hour,
                             parsed_dt.minute,
@@ -142,7 +164,7 @@ class ArissArticleGenerator:
                         elevation_str = line.split('UTC')[1].strip()
                         if elevation_str:
                             contact.elevation = elevation_str
-                    except ValueError as e:
+                    except (ValueError, IndexError) as e:
                         print(f"Error parsing date: {e}")
                 
                 elif 'Watch for the Livestream at' in line:
@@ -165,29 +187,27 @@ class ArissArticleGenerator:
                 self.contacts.append(contact)
 
     def generate_wordpress_article(self, contact):
-        # Conversion en heure de Paris avec gestion automatique de l'heure d'été/hiver
         paris_time = contact.date_time.astimezone(ZoneInfo('Europe/Paris'))
-        
-        # Format dates
         date_fr = paris_time.strftime("%d/%m/%Y")
         time_utc = contact.date_time.strftime("%H:%M")
         time_paris = paris_time.strftime("%H:%M")
         
-        # Generate article title
         title = f"Contact radioamateur du {date_fr} – {contact.callsign}"
         
-        # Generate article content
         content = f"""Un contact radioamateur est prévu le {paris_time.strftime('%A %d %B %Y').lower()} vers {time_utc} UTC ({time_paris} heure de Paris).
 
-Il aura lieu entre l'astronaute {contact.astronaut} ({contact.astronaut_callsign}) et {contact.school} en {contact.location}.
+Il aura lieu entre l'astronaute {contact.astronaut} ({contact.astronaut_callsign}) et {contact.school} en {contact.location}."""
 
-Le contact sera sur {contact.frequency} (+/-3 KHz de doppler) en FM étroite. Il sera {contact.contact_type} par la station {contact.callsign} et donc audible depuis la France.
-"""
+        if contact.contact_type.lower() == "telebridge":
+            station_desc = f" la station {contact.station_location} " if contact.station_location else " la station "
+            content += f"\n\nLe contact sera sur {contact.frequency} (+/-3 KHz de doppler) en FM étroite. Il sera conduit par télébridge via{station_desc}{contact.callsign} et donc audible depuis la France."
+        else:
+            content += f"\n\nLe contact sera sur {contact.frequency} (+/-3 KHz de doppler) en FM étroite. Il sera en direct via la station {contact.callsign} et donc audible depuis la France."
 
         if contact.livestream:
-            content += f"\nUn livestream sera disponible sur : {contact.livestream}\n"
+            content += f"\n\nUn livestream sera disponible sur : {contact.livestream}"
 
-        content += "\n<!-- more -->\n\nQuestions prévues :\n\n"
+        content += "\n\n<!-- more -->\n\nQuestions prévues :\n\n"
         
         for question in contact.questions:
             content += f"{question}\n"
@@ -246,20 +266,8 @@ def parse_arguments():
                       default='arissnews.txt')
     parser.add_argument('-u', '--url-newsletter',
                       help='URL de la newsletter ARISS (par défaut: https://www.amsat.org/amsat/ariss/news/arissnews.txt)',
-                      nargs='?',  # Rend l'argument optionnel
-                      const='https://www.amsat.org/amsat/ariss/news/arissnews.txt',  # Valeur si -u présent sans argument
-                      default=None)  # Valeur si -u non présent
-    parser.add_argument('-d', '--date',
-                      help='Date du contact à traiter (format: JJ/MM/AAAA). Si non spécifié, traite tous les contacts',
-                      default=None)
-    return parser.parse_args()
-    
-    parser = argparse.ArgumentParser(description='Génère des articles WordPress pour les contacts ARISS')
-    parser.add_argument('-f', '--ariss-file', 
-                      help='Chemin vers le fichier arissnews.txt (par défaut: arissnews.txt dans le répertoire courant)',
-                      default='arissnews.txt')
-    parser.add_argument('-u', '--url-newsletter',
-                      help='URL de la newsletter ARISS (si spécifié, télécharge la dernière version)',
+                      nargs='?',
+                      const='https://www.amsat.org/amsat/ariss/news/arissnews.txt',
                       default=None)
     parser.add_argument('-d', '--date',
                       help='Date du contact à traiter (format: JJ/MM/AAAA). Si non spécifié, traite tous les contacts',
@@ -330,8 +338,7 @@ def main():
                 print(f"Status: {article['status']}\n")
                 print("Content:")
                 print(article['content'])
-        
-        print(f"\n{'=' * 80}\n")
+                print(f"\n{'=' * 80}\n")
         if target_date:
             print(f"Nombre de contacts traités pour le {args.date} : {contact_count}")
         else:
