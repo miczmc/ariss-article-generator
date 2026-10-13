@@ -48,6 +48,9 @@ Note:
     le format standard ARISS. Le fichier doit être encodé en UTF-8.
 
 Changelog:
+    v1.0.2 (2026-10-13):
+    - Nouveau texte de fin des articles (issue #1)
+
     v1.0.1 (2024-03-22):
     - Fix du bug d'affichage des contacts télébridge
     - Ajout de la détection automatique des stations italiennes (IK*)
@@ -61,8 +64,8 @@ Changelog:
     - Conversion automatique des fuseaux horaires
 
 Author: Michel Nawrocki F1AFW, ARISS
-Version: 1.0.1
-Date: 2024-03-22
+Version: 1.0.2
+Date: 2026-10-13
 """
 
 import re
