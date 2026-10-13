@@ -212,7 +212,7 @@ Il aura lieu entre l'astronaute {contact.astronaut} ({contact.astronaut_callsign
         for question in contact.questions:
             content += f"{question}\n"
             
-        content += "\nL'équipe ARISS se tient à votre disposition pour tout support relatif à l'écoute de ce contact.\n\n73 et bonne écoute"
+        content += "\nLe déroulé du contact peut évoluer en fonction des contraintes opérationnelles à bord de la Stations Spatiale Internationale.\n\nL’équipe ARISS se tient à votre disposition pour tout support relatif à l’écoute de ce contact radioamateur.\n\n73 et bonne écoute"
         
         return {
             'title': title,
